@@ -67,7 +67,7 @@ const LoadTestResults = () => {
   }
   const [comparisonResults, setComparisonResults] = useState<PartitionTestResult[]>([]);
 
-  // 자동 모드: Kafka 테스트 실행
+  // Kafka 테스트 실행
   const handleKafkaTest = async () => {
     try {
       setKafkaLoading(true);
@@ -84,13 +84,12 @@ const LoadTestResults = () => {
       pollTestResult(jobId, setKafkaResult, setKafkaLoading, setKafkaProgress);
 
     } catch (error) {
-      showToast('백엔드 API가 아직 준비되지 않았습니다. 수동 모드를 사용하세요.', 'warning');
-      setKafkaLoading(false);
+      showToast('테스트를 시작하는 중 오류가 발생했습니다.', 'error');
       setKafkaProgress(0);
     }
   };
 
-  // 자동 모드: 동기 테스트 실행
+  // 동기 테스트 실행
   const handleSyncTest = async () => {
     try {
       setSyncLoading(true);
@@ -107,7 +106,7 @@ const LoadTestResults = () => {
       pollTestResult(jobId, setSyncResult, setSyncLoading, setSyncProgress);
 
     } catch (error) {
-      showToast('백엔드 API가 아직 준비되지 않았습니다. 수동 모드를 사용하세요.', 'warning');
+      showToast('테스트를 시작하는 중 오류가 발생했습니다.', 'error');
       setSyncLoading(false);
       setSyncProgress(0);
     }
