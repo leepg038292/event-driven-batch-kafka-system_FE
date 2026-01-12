@@ -81,7 +81,7 @@ const LoadTestResults = () => {
         partitions: parseInt(partitions),
       });
 
-      pollTestResult(jobId, setKafkaResult, setKafkaLoading, setKafkaProgress);
+      pollTestResult(jobId, setKafkaResult, setKafkaLoading, setKafkaProgress, parseInt(totalRequests));
 
     } catch (error) {
       showToast('테스트를 시작하는 중 오류가 발생했습니다.', 'error');
@@ -103,7 +103,7 @@ const LoadTestResults = () => {
         partitions: parseInt(partitions),
       });
 
-      pollTestResult(jobId, setSyncResult, setSyncLoading, setSyncProgress);
+      pollTestResult(jobId, setSyncResult, setSyncLoading, setSyncProgress, parseInt(totalRequests));
 
     } catch (error) {
       showToast('테스트를 시작하는 중 오류가 발생했습니다.', 'error');
@@ -117,13 +117,31 @@ const LoadTestResults = () => {
     jobId: string,
     setResult: (result: LoadTestResult) => void,
     setLoading: (loading: boolean) => void,
-    setProgress: (progress: number) => void
+    setProgress: (progress: number) => void,
+    totalRequests: number
   ) => {
     let retryCount = 0;
-    const maxRetries = 150; // 2초 * 150 = 300초 (5분)
-    const estimatedDuration = 40000; // K6 테스트는 약 40초 예상 (30초 실행 + 오버헤드)
+
+    // 요청 규모에 따라 동적으로 타임아웃 계산
+    const calculateTimeout = (requests: number) => {
+      if (requests <= 10000) return 300; // 5분
+      if (requests <= 30000) return 450; // 7.5분
+      if (requests <= 70000) return 600; // 10분
+      if (requests <= 100000) return 900; // 15분
+      if (requests <= 500000) return 1800; // 30분
+      if (requests <= 1000000) return 3000; // 50분
+      return 4500; // 75분 (최대)
+    };
+
+    const maxRetries = calculateTimeout(totalRequests); // 2초 간격 폴링
+
+    // 예상 소요 시간 계산 (TPS 기준: Kafka ~200, Sync ~10)
+    const estimatedTPS = 200; // Kafka 평균 TPS
+    const estimatedDuration = (totalRequests / estimatedTPS) * 1000; // ms 단위
 
     const interval = setInterval(async () => {
+      retryCount++; // 폴링 시도 횟수 증가 (성공/실패 관계없이)
+
       try {
         const result = await getLoadTestResult(jobId);
 
@@ -145,7 +163,6 @@ const LoadTestResults = () => {
           setProgress(progress);
         }
       } catch (error) {
-        retryCount++;
         console.warn(`폴링 에러 (${retryCount}/${maxRetries}):`, error);
 
         // 최대 재시도 횟수 초과 시에만 중단
@@ -155,8 +172,8 @@ const LoadTestResults = () => {
           setProgress(0);
           showToast('테스트 결과 조회 타임아웃', 'error');
         }
+        // maxRetries 미만이면 계속 재시도 (2초 후 자동 실행)
       }
-      retryCount++;
     }, 2000);
   };
 
