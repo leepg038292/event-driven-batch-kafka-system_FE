@@ -11,8 +11,6 @@ import {
   CircularProgress,
   Alert,
   TextField,
-  Switch,
-  FormControlLabel,
   LinearProgress,
   Chip,
   Table,
@@ -41,7 +39,6 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'
 const LoadTestResults = () => {
   const { showToast } = useToast();
 
-  const [useAutoMode, setUseAutoMode] = useState(false); // 자동/수동 모드 토글
   const [campaignId, setCampaignId] = useState('1');
   const [totalRequests, setTotalRequests] = useState('30000');
   const [partitions, setPartitions] = useState('3');
@@ -69,38 +66,6 @@ const LoadTestResults = () => {
     orderAnalysis?: OrderAnalysisResponse;
   }
   const [comparisonResults, setComparisonResults] = useState<PartitionTestResult[]>([]);
-
-  // 수동 모드: JSON 파일 로드
-  const loadManualResults = async () => {
-    try {
-      const response = await fetch('/k6-results.json');
-      const data = await response.json();
-
-      if (data.kafka) {
-        setKafkaResult({
-          jobId: 'manual-kafka',
-          method: 'KAFKA',
-          campaignId: parseInt(campaignId),
-          status: 'COMPLETED',
-          metrics: data.kafka.metrics,
-        });
-      }
-
-      if (data.sync) {
-        setSyncResult({
-          jobId: 'manual-sync',
-          method: 'SYNC',
-          campaignId: parseInt(campaignId),
-          status: 'COMPLETED',
-          metrics: data.sync.metrics,
-        });
-      }
-
-      showToast('수동 테스트 결과를 불러왔습니다.', 'success');
-    } catch (error) {
-      showToast('k6-results.json 파일을 찾을 수 없습니다. K6 테스트를 먼저 실행하세요.', 'error');
-    }
-  };
 
   // 자동 모드: Kafka 테스트 실행
   const handleKafkaTest = async () => {
@@ -259,34 +224,7 @@ const LoadTestResults = () => {
         K6 부하 테스트 결과
       </Typography>
 
-      {/* 모드 선택 */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={useAutoMode}
-              onChange={(e) => setUseAutoMode(e.target.checked)}
-            />
-          }
-          label={useAutoMode ? '자동 모드 (백엔드 API)' : '수동 모드 (JSON 파일)'}
-        />
 
-        {!useAutoMode && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            수동 모드: K6 테스트를 직접 실행하고 결과를 <code>frontend/public/k6-results.json</code>에 저장하세요.
-          </Alert>
-        )}
-
-        {useAutoMode && (
-          <Alert severity="warning" sx={{ mt: 2 }}>
-            <strong>⚠️ 파티션 수동 설정 필요:</strong> 테스트 전에 Docker 명령어로 Kafka 토픽 파티션을 설정하세요.
-            <br />
-            <code style={{ fontSize: '0.85em', display: 'block', marginTop: '8px', padding: '8px', backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: '4px' }}>
-              docker exec kafka kafka-topics --bootstrap-server kafka:29092 --alter --topic campaign-participation-topic --partitions 3
-            </code>
-          </Alert>
-        )}
-      </Paper>
 
       {/* 테스트 실행 */}
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -301,68 +239,54 @@ const LoadTestResults = () => {
               size="small"
             />
           </Grid>
-          {useAutoMode && (
-            <>
-              <Grid item xs={12} sm={3}>
-                <TextField
-                  fullWidth
-                  label="총 요청 수"
-                  type="number"
-                  value={totalRequests}
-                  onChange={(e) => setTotalRequests(e.target.value)}
-                  size="small"
-                  helperText="1000, 10000, 30000, 100000 등"
-                />
-              </Grid>
-              <Grid item xs={12} sm={3}>
-                <TextField
-                  fullWidth
-                  label="파티션 수"
-                  type="number"
-                  value={partitions}
-                  onChange={(e) => setPartitions(e.target.value)}
-                  size="small"
-                  helperText="Docker로 수동 설정 필요"
-                />
-              </Grid>
-            </>
-          )}
-          <Grid item xs={12} sm={useAutoMode ? 3 : 4}>
-            {useAutoMode ? (
-              <Box display="flex" gap={1}>
-                <Button
-                  variant="contained"
-                  startIcon={kafkaLoading ? <CircularProgress size={20} /> : <PlayArrow />}
-                  onClick={handleKafkaTest}
-                  disabled={kafkaLoading || syncLoading}
-                  fullWidth
-                >
-                  Kafka
-                </Button>
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  startIcon={syncLoading ? <CircularProgress size={20} /> : <PlayArrow />}
-                  onClick={handleSyncTest}
-                  disabled={kafkaLoading || syncLoading}
-                  fullWidth
-                >
-                  동기
-                </Button>
-              </Box>
-            ) : (
+          <Grid item xs={12} sm={3}>
+            <TextField
+              fullWidth
+              label="총 요청 수"
+              type="number"
+              value={totalRequests}
+              onChange={(e) => setTotalRequests(e.target.value)}
+              size="small"
+              helperText="1000, 10000, 30000, 100000 등"
+            />
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <TextField
+              fullWidth
+              label="파티션 수"
+              type="number"
+              value={partitions}
+              onChange={(e) => setPartitions(e.target.value)}
+              size="small"
+              helperText="Docker로 수동 설정 필요"
+            />
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <Box display="flex" gap={1}>
               <Button
                 variant="contained"
-                onClick={loadManualResults}
+                startIcon={kafkaLoading ? <CircularProgress size={20} /> : <PlayArrow />}
+                onClick={handleKafkaTest}
+                disabled={kafkaLoading || syncLoading}
                 fullWidth
               >
-                결과 불러오기
+                Kafka
               </Button>
-            )}
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={syncLoading ? <CircularProgress size={20} /> : <PlayArrow />}
+                onClick={handleSyncTest}
+                disabled={kafkaLoading || syncLoading}
+                fullWidth
+              >
+                동기
+              </Button>
+            </Box>
           </Grid>
 
           {/* 실시간 진행률 표시 */}
-          {useAutoMode && (kafkaLoading || syncLoading) && (
+          {(kafkaLoading || syncLoading) && (
             <Grid item xs={12}>
               <Box sx={{ mt: 2 }}>
                 {kafkaLoading && (
