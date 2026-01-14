@@ -29,8 +29,8 @@ import {
   getLoadTestResult,
   type LoadTestResult,
 } from '../../api/loadTest';
-import { getOrderAnalysis } from '../../api/stats';
-import type { OrderAnalysisResponse } from '../../types';
+import { getOrderAnalysis, getOrderViolations } from '../../api/stats';
+import type { OrderAnalysisResponse, OrderViolationResponse } from '../../types';
 import { useToast } from '../../components/ToastProvider';
 
 // 파이 차트 색상
@@ -41,7 +41,6 @@ const LoadTestResults = () => {
 
   const [campaignId, setCampaignId] = useState('1');
   const [totalRequests, setTotalRequests] = useState('30000');
-  const [partitions, setPartitions] = useState('3');
 
   const [kafkaResult, setKafkaResult] = useState<LoadTestResult | null>(null);
   const [syncResult, setSyncResult] = useState<LoadTestResult | null>(null);
@@ -58,6 +57,10 @@ const LoadTestResults = () => {
   // 순서 분석 상태
   const [orderAnalysis, setOrderAnalysis] = useState<OrderAnalysisResponse | null>(null);
   const [orderAnalysisLoading, setOrderAnalysisLoading] = useState(false);
+
+  // 순서 위반 상태
+  const [orderViolations, setOrderViolations] = useState<OrderViolationResponse | null>(null);
+  const [orderViolationsLoading, setOrderViolationsLoading] = useState(false);
 
   // 파티션 비교용 데이터 (여러 테스트 결과 저장)
   interface PartitionTestResult {
@@ -78,7 +81,7 @@ const LoadTestResults = () => {
       const { jobId } = await executeKafkaTest({
         campaignId: parseInt(campaignId),
         totalRequests: parseInt(totalRequests),
-        partitions: parseInt(partitions),
+        partitions: 1, // 파티션은 EC2에서 수동 변경 (Spring Profile)
       });
 
       pollTestResult(jobId, setKafkaResult, setKafkaLoading, setKafkaProgress, parseInt(totalRequests));
@@ -100,7 +103,7 @@ const LoadTestResults = () => {
       const { jobId } = await executeSyncTest({
         campaignId: parseInt(campaignId),
         totalRequests: parseInt(totalRequests),
-        partitions: parseInt(partitions),
+        partitions: 1, // 파티션은 EC2에서 수동 변경 (Spring Profile)
       });
 
       pollTestResult(jobId, setSyncResult, setSyncLoading, setSyncProgress, parseInt(totalRequests));
@@ -194,6 +197,33 @@ const LoadTestResults = () => {
     }
   };
 
+  // 순서 위반 조회
+  const handleOrderViolations = async () => {
+    try {
+      setOrderViolationsLoading(true);
+      showToast('순서 위반 데이터를 조회합니다...', 'info');
+
+      const result = await getOrderViolations(parseInt(campaignId), 50); // 최대 50개까지
+      console.log('📊 순서 위반 API 응답:', result); // 디버깅용 로그
+
+      setOrderViolations(result);
+
+      const totalCount = result?.totalViolations ?? 0;
+      const displayCount = result?.violations?.length ?? 0;
+
+      if (totalCount === 0) {
+        showToast('순서 위반이 발견되지 않았습니다! 완벽한 순서 보장 ✅', 'success');
+      } else {
+        showToast(`순서 위반 ${totalCount}건이 조회되었습니다 (표시: ${displayCount}건).`, 'success');
+      }
+    } catch (error) {
+      showToast('순서 위반 조회 중 오류가 발생했습니다.', 'error');
+      console.error('❌ 순서 위반 조회 오류:', error);
+    } finally {
+      setOrderViolationsLoading(false);
+    }
+  };
+
   // 비교 결과에 추가
   const addToComparison = () => {
     if (!kafkaResult || !orderAnalysis) {
@@ -201,19 +231,22 @@ const LoadTestResults = () => {
       return;
     }
 
+    // 순서 분석 결과에서 실제 파티션 수 추출
+    const actualPartitions = orderAnalysis.partitionDistribution.length;
+
     const newResult: PartitionTestResult = {
-      partitions: parseInt(partitions),
+      partitions: actualPartitions,
       kafkaResult,
       orderAnalysis,
     };
 
     // 중복 체크 (같은 파티션 개수가 이미 있으면 덮어쓰기)
     setComparisonResults((prev) => {
-      const filtered = prev.filter((r) => r.partitions !== parseInt(partitions));
+      const filtered = prev.filter((r) => r.partitions !== actualPartitions);
       return [...filtered, newResult].sort((a, b) => a.partitions - b.partitions);
     });
 
-    showToast(`파티션 ${partitions}개 결과를 비교 목록에 추가했습니다.`, 'success');
+    showToast(`파티션 ${actualPartitions}개 결과를 비교 목록에 추가했습니다.`, 'success');
   };
 
   // 비교 결과 초기화
@@ -245,7 +278,7 @@ const LoadTestResults = () => {
       {/* 테스트 실행 */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={4}>
             <TextField
               fullWidth
               label="캠페인 ID"
@@ -255,7 +288,7 @@ const LoadTestResults = () => {
               size="small"
             />
           </Grid>
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={4}>
             <TextField
               fullWidth
               label="총 요청 수"
@@ -266,18 +299,7 @@ const LoadTestResults = () => {
               helperText="1000, 10000, 30000, 100000 등"
             />
           </Grid>
-          <Grid item xs={12} sm={3}>
-            <TextField
-              fullWidth
-              label="파티션 수"
-              type="number"
-              value={partitions}
-              onChange={(e) => setPartitions(e.target.value)}
-              size="small"
-              helperText="Docker로 수동 설정 필요"
-            />
-          </Grid>
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={4}>
             <Box display="flex" gap={1}>
               <Button
                 variant="contained"
@@ -346,7 +368,7 @@ const LoadTestResults = () => {
               파티션 개수에 따른 메시지 순서 정확도를 분석합니다. (파티션 1개 = ~100%, 파티션 4개+ = ~70%)
             </Typography>
           </Grid>
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={2}>
             <Button
               variant="contained"
               color="info"
@@ -355,10 +377,22 @@ const LoadTestResults = () => {
               disabled={orderAnalysisLoading}
               fullWidth
             >
-              순서 분석 실행
+              순서 분석
             </Button>
           </Grid>
-          <Grid item xs={12} sm={3}>
+          <Grid item xs={12} sm={2}>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={orderViolationsLoading ? <CircularProgress size={20} /> : <Analytics />}
+              onClick={handleOrderViolations}
+              disabled={orderViolationsLoading}
+              fullWidth
+            >
+              위반 조회
+            </Button>
+          </Grid>
+          <Grid item xs={12} sm={2}>
             <Button
               variant="outlined"
               color="secondary"
@@ -366,7 +400,7 @@ const LoadTestResults = () => {
               disabled={!kafkaResult || !orderAnalysis}
               fullWidth
             >
-              비교 목록에 추가
+              비교 추가
             </Button>
           </Grid>
         </Grid>
@@ -565,6 +599,132 @@ const LoadTestResults = () => {
             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>
               💡 결론: 파티션을 늘리면 처리 속도는 빨라지지만, 메시지 순서는 섞일 수 있습니다.
               재고 정확성은 Atomic UPDATE로 보장됩니다!
+            </Typography>
+          </Alert>
+        </>
+      )}
+
+      {/* 순서 위반 상세 정보 */}
+      {orderViolations && orderViolations.totalViolations !== undefined && (
+        <>
+          <Divider sx={{ my: 4 }} />
+          <Typography variant="h5" gutterBottom sx={{ mt: 4, mb: 3 }}>
+            ⚠️ 순서 위반 상세 정보
+          </Typography>
+
+          {/* 위반 요약 */}
+          <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid item xs={12} md={4}>
+              <Card sx={{ bgcolor: 'error.light' }}>
+                <CardContent>
+                  <Typography variant="h6" color="error.dark">총 위반 건수</Typography>
+                  <Typography variant="h4">{(orderViolations.totalViolations || 0).toLocaleString()}건</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Card sx={{ bgcolor: 'info.light' }}>
+                <CardContent>
+                  <Typography variant="h6" color="info.dark">조회 시간</Typography>
+                  <Typography variant="h4">{(orderViolations.queryTimeMs || 0).toFixed(2)}ms</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Card sx={{ bgcolor: 'warning.light' }}>
+                <CardContent>
+                  <Typography variant="h6" color="warning.dark">표시 건수</Typography>
+                  <Typography variant="h4">{(orderViolations.violations?.length || 0)}건</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          {/* 위반 상세 테이블 */}
+          {orderViolations.violations && orderViolations.violations.length > 0 ? (
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                순서 위반 상세 내역
+              </Typography>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><strong>현재 메시지</strong></TableCell>
+                      <TableCell><strong>다음 메시지</strong></TableCell>
+                      <TableCell><strong>설명</strong></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {orderViolations.violations.map((violation, index) => (
+                      <TableRow key={index} sx={{ bgcolor: index % 2 === 0 ? 'grey.50' : 'white' }}>
+                        <TableCell>
+                          <Box sx={{ p: 1, border: '1px solid', borderColor: 'error.main', borderRadius: 1, bgcolor: 'error.light' }}>
+                            <Typography variant="body2" fontWeight="bold">
+                              User ID: {violation.current.userId}
+                            </Typography>
+                            <Typography variant="caption" display="block">
+                              처리 순서: {violation.current.processingSeq}
+                            </Typography>
+                            <Typography variant="caption" display="block">
+                              파티션: {violation.current.partition} | Offset: {violation.current.offset}
+                            </Typography>
+                            <Typography variant="caption" display="block" color="text.secondary">
+                              {new Date(violation.current.timestamp).toLocaleString('ko-KR')}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ p: 1, border: '1px solid', borderColor: 'warning.main', borderRadius: 1, bgcolor: 'warning.light' }}>
+                            <Typography variant="body2" fontWeight="bold">
+                              User ID: {violation.next.userId}
+                            </Typography>
+                            <Typography variant="caption" display="block">
+                              처리 순서: {violation.next.processingSeq}
+                            </Typography>
+                            <Typography variant="caption" display="block">
+                              파티션: {violation.next.partition} | Offset: {violation.next.offset}
+                            </Typography>
+                            <Typography variant="caption" display="block" color="text.secondary">
+                              {new Date(violation.next.timestamp).toLocaleString('ko-KR')}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="error">
+                            {violation.explanation}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          ) : (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              <Typography variant="body1">
+                순서 위반이 발견되지 않았습니다! 메시지가 올바른 순서로 처리되었습니다.
+              </Typography>
+            </Alert>
+          )}
+
+          {/* 위반 결과 해석 */}
+          <Alert severity="info" sx={{ mt: 3 }}>
+            <Typography variant="body1" gutterBottom>
+              <strong>순서 위반 정보:</strong>
+            </Typography>
+            <Typography variant="body2">
+              - <strong>순서 위반:</strong> Kafka에서 메시지가 전송된 순서와 실제 DB에 처리된 순서가 다른 경우를 의미합니다.
+            </Typography>
+            <Typography variant="body2">
+              - <strong>발생 원인:</strong> 여러 파티션을 사용할 경우, 각 파티션별로 병렬 처리되기 때문에 전체적인 순서가 섞일 수 있습니다.
+            </Typography>
+            <Typography variant="body2">
+              - <strong>영향:</strong> 순서 위반이 있어도 재고 정확성은 Atomic UPDATE로 보장됩니다. 다만 사용자별 처리 순서가 보장되지 않을 수 있습니다.
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>
+              💡 참고: 파티션이 1개일 경우에는 순서 위반이 발생하지 않습니다.
             </Typography>
           </Alert>
         </>

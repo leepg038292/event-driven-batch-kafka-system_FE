@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { PerformanceStats, CampaignStatsResponse, ApiResponse, OrderAnalysisResponse } from '../types/index';
+import type { PerformanceStats, CampaignStatsResponse, ApiResponse, OrderAnalysisResponse, OrderViolationResponse } from '../types/index';
 
 // 일자별 배치 집계 통계 조회 (빠른 API)
 export const getDailyPerformanceStats = async (date: string): Promise<PerformanceStats> => {
@@ -56,5 +56,27 @@ export const getOrderAnalysis = async (campaignId: number): Promise<OrderAnalysi
   return {
     ...data,
     partitionDistribution,
+  };
+};
+
+// Kafka 순서 위반 조회 (GET /api/admin/stats/order-violations/{campaignId})
+export const getOrderViolations = async (
+  campaignId: number,
+  limit?: number
+): Promise<OrderViolationResponse> => {
+  let url = `/api/admin/stats/order-violations/${campaignId}`;
+  if (limit) {
+    url += `?limit=${limit}`;
+  }
+
+  const response = await apiClient.get<ApiResponse<any>>(url);
+  const data = response.data.data;
+
+  // 백엔드 응답 구조: violationsFound → totalViolations로 변환
+  return {
+    campaignId: data.campaignId,
+    queryTimeMs: data.queryTimeMs,
+    totalViolations: data.violationsFound || 0,  // 백엔드는 violationsFound 사용
+    violations: data.violations || [],
   };
 };
