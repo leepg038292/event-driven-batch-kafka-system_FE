@@ -207,3 +207,29 @@ export interface LogEntry {
   level: string;
   message: string;
 }
+
+// --- 순서 위반 타입 (2025-01-14 추가) ---
+
+// 메시지 정보
+export interface MessageInfo {
+  userId: number;
+  timestamp: string;
+  partition: number;
+  offset: number;
+  processingSeq: number;
+}
+
+// 순서 위반 상세 정보
+export interface OrderViolation {
+  current: MessageInfo;
+  next: MessageInfo;
+  explanation: string;
+}
+
+// 순서 위반 응답 (GET /api/admin/stats/order-violations/{campaignId})
+export interface OrderViolationResponse {
+  campaignId: number;
+  queryTimeMs: number;
+  totalViolations: number;
+  violations: OrderViolation[];
+}
