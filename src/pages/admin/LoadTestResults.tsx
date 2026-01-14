@@ -203,7 +203,7 @@ const LoadTestResults = () => {
       setOrderViolationsLoading(true);
       showToast('순서 위반 데이터를 조회합니다...', 'info');
 
-      const result = await getOrderViolations(parseInt(campaignId), 50); // 최대 50개까지
+      const result = await getOrderViolations(parseInt(campaignId));
       console.log('📊 순서 위반 API 응답:', result); // 디버깅용 로그
 
       setOrderViolations(result);
